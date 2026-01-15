@@ -1,75 +1,96 @@
-# Data Schema (Google Play Reviews Ingestion)
+# Data Schema
 
-This project ingests Google Play reviews and stores them in a lightweight relational schema
-designed for analysis + future pipeline extensions.
+This project uses a simple, reproducible data pipeline with explicit “raw” and “processed” layers.  
+Tables are linked via a shared primary key: `review_id`.
 
-## 1) apps (dimension)
-**Primary Key:** `app_id`
+## Data Flow
 
-| column | type | description |
+1. **Ingestion** → `data/raw/play_reviews_ingested.csv`  
+2. **Processing / Enrichment** → `data/processed/reviews_enriched.csv`  
+3. **Analysis-ready merge (derived)** → `data/processed/reviews_merged.csv` (optional)
+
+- **Join key / Primary key:** `review_id`
+- `reviews_merged.csv` is a convenience dataset created by joining raw + enriched features on `review_id`.
+
+---
+
+## Table: `raw.play_reviews`  
+**File:** `data/raw/play_reviews_ingested.csv`  
+**Grain:** 1 row per Google Play review (as ingested)  
+**Primary Key:** `review_id`
+
+| Column | Type | Description |
 |---|---|---|
-| app_id | TEXT | Google Play package name (e.g., `com.openai.chatgpt`) |
-| platform | TEXT | constant: `google_play` |
-| created_at | TIMESTAMP | record creation time (optional) |
+| review_id | string | Unique review identifier (primary key) |
+| user_name | string | Reviewer display name |
+| user_image_url | string | Reviewer avatar URL |
+| review_text | string | Review text content |
+| rating | int | Star rating (1–5) |
+| thumbs_up | int | Helpful/upvote count at time of scrape |
+| review_created_version | string | App version recorded on review creation (if available) |
+| review_time | string | Review timestamp (string in CSV; parseable to datetime) |
+| reply_text | string/nullable | Developer reply text (nullable) |
+| reply_time | string/nullable | Developer reply time (nullable) |
+| app_version | string | App version field captured during ingestion (if available) |
 
-## 2) app_versions (dimension)
-**Primary Key:** `version_id`  
-**Unique:** (`app_id`, `version_string`)
+**Notes**
+- Some reply-related columns may be missing (null) when no developer response exists.
+- Timestamp fields are stored as strings in CSV and can be parsed to datetime in downstream analysis.
 
-| column | type | description |
-|---|---|---|
-| version_id | INTEGER | surrogate key (autoincrement) |
-| app_id | TEXT | FK -> apps.app_id |
-| version_string | TEXT | app version string as observed in reviews |
-| first_seen_at | TIMESTAMP | first time this version appears (optional) |
-| last_seen_at | TIMESTAMP | last time this version appears (optional) |
+---
 
-## 3) reviews (fact)
+## Table: `processed.reviews_enriched`  
+**File:** `data/processed/reviews_enriched.csv`  
+**Grain:** 1 row per review (same `review_id` key), enriched with derived features  
 **Primary Key:** `review_id`  
-**Foreign Keys:** `app_id`, `version_id`
+**Upstream:** derived from `raw.play_reviews`
 
-| column | type | description |
+| Column | Type | Description |
 |---|---|---|
-| review_id | TEXT | unique review id (dedup key) |
-| app_id | TEXT | FK -> apps.app_id |
-| version_id | INTEGER | FK -> app_versions.version_id (nullable) |
-| rating | INTEGER | 1–5 |
-| review_text | TEXT | raw review text |
-| review_time | TIMESTAMP | review created time |
-| thumbs_up_count | INTEGER | likes/upvotes (nullable) |
-| user_name | TEXT | author name (nullable) |
-| reply_content | TEXT | developer reply (nullable) |
-| replied_at | TIMESTAMP | developer reply timestamp (nullable) |
-| lang | TEXT | ingestion parameter (e.g., `en`) |
-| country | TEXT | ingestion parameter (e.g., `us`) |
-| ingested_at | TIMESTAMP | pipeline ingestion time |
+| review_id | string | Unique review identifier (primary key) |
+| user_name | string | Reviewer display name (carried from raw) |
+| user_image_url | string | Reviewer avatar URL (carried from raw) |
+| review_text | string | Review text content (carried from raw) |
+| rating | int | Star rating (1–5) |
+| thumbs_up_count | int | Helpful/upvote count (standardized naming) |
+| app_version | string | App version (standardized naming) |
+| review_time | string | Review timestamp (string in CSV; parseable to datetime) |
+| reply_content | string/nullable | Developer reply text (standardized naming; nullable) |
+| replied_at | string/nullable | Developer reply timestamp (standardized naming; nullable) |
+| review_len | int | Character length of `review_text` |
+| word_count | int | Word count of `review_text` |
+| sentiment | float/nullable | Sentiment score (derived from review text; nullable if not computed) |
 
-### Derived columns stored in `reviews` (enriched features)
-These are computed downstream and stored as columns for convenience at this stage:
+**Notes**
+- This dataset standardizes a few fields compared to raw (e.g., `thumbs_up_count`, `reply_content`, `replied_at`).
+- Derived features (`review_len`, `word_count`, `sentiment`) support downstream EDA/modeling.
 
-| column | type | description |
-|---|---|---|
-| review_len | INTEGER | character length of review_text |
-| word_count | INTEGER | token/word count |
-| sentiment | TEXT | sentiment label (neg/neu/pos) |
-| compound | REAL | sentiment score (e.g., VADER compound) |
-| hour | INTEGER | 0–23 extracted from review_time |
+---
 
-## Canonical field mapping
-The ingestion source may produce slightly different keys; we normalize to canonical names:
+## Table: `processed.reviews_merged` (optional, derived)
+**File:** `data/processed/reviews_merged.csv`  
+**Grain:** 1 row per review  
+**Primary Key:** `review_id`  
+**Definition:** left-join `raw.play_reviews` with selected enriched fields from `processed.reviews_enriched` on `review_id`.
 
-- `content` -> `review_text`
-- `score` -> `rating`
-- `at` -> `review_time`
-- `reviewId` -> `review_id` (then stored as `review_id`)
-- `userName` -> `user_name`
-- `thumbsUpCount` -> `thumbs_up_count`
-- `replyContent` -> `reply_content`
-- `repliedAt` -> `replied_at`
-- `appVersion` -> `app_version`
+| Column Group | Description |
+|---|---|
+| Raw columns | Full set of ingested fields from `raw.play_reviews` |
+| Enriched columns | `thumbs_up_count`, `reply_content`, `replied_at`, `review_len`, `word_count`, `sentiment` |
 
-## Recommended indexes (for DB phase)
-- reviews(review_time)
-- reviews(version_id)
-- reviews(rating)
-- reviews(app_id, review_time)
+**Purpose**
+- Provides an analysis-ready “single table” view for convenience.
+- Can be regenerated anytime from raw + processed sources; it is not required as a source-of-truth artifact.
+
+---
+
+## Relational Layer (Lightweight)
+
+Even without a database, the project treats datasets as relational tables:
+
+- `raw.play_reviews` (source-of-truth)
+- `processed.reviews_enriched` (deterministic transformations + derived features)
+- Relationship: `raw.play_reviews.review_id` ↔ `processed.reviews_enriched.review_id`
+
+Downstream analysis should reference the processed layer (or the merged view) to ensure consistent feature definitions.
+
