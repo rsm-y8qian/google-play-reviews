@@ -1,0 +1,6 @@
+raw_path: "data/raw"
+output_path: "outputs/processed.parquet"
+summary_path: "outputs/run_summary.json"
+required_columns:
+  - "review_id"
+output_format: "parquet"
