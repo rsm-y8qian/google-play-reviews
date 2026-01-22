@@ -1,14 +1,17 @@
 # config.yaml
-data:
-  raw_dir: "data/raw"
-  processed_file: "data/processed/reviews.parquet"  # latest snapshot
+paths:
+  raw_root: "data/raw"
+  processed_root: "data/processed"
+  runs_root: "outputs/runs"
 
-outputs:
-  runs_dir: "outputs/runs"
+fetch:
+  lang: "en"
+  country: "us"
+  sort: "newest"      # newest | rating
+  batch_limit: 500    # this run max reviews
 
 validation:
   required_columns:
-    - review_id
-
+    - reviewId        
 store:
-  parquet_prefer: true
+  prefer_parquet: true

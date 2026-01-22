@@ -1,4 +1,6 @@
 pandas
 pyyaml
+google-play-scraper
 pyarrow
 fastparquet
+streamlit

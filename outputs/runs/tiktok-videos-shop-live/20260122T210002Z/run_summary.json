@@ -1,0 +1,40 @@
+{
+  "app": {
+    "url": "https://play.google.com/store/apps/details?id=com.zhiliaoapp.musically&hl=en_US",
+    "id": "com.zhiliaoapp.musically",
+    "slug": "tiktok-videos-shop-live"
+  },
+  "run_id": "20260122T210002Z",
+  "start_time": "2026-01-22T21:00:02.455590Z",
+  "end_time": "2026-01-22T21:00:03.673126Z",
+  "status": "success",
+  "errors": [],
+  "counts": {
+    "raw": 600,
+    "processed": 600
+  },
+  "validation": {
+    "row_count": 600,
+    "required_columns": {
+      "reviewId": {
+        "exists": true,
+        "missing_ratio": 0.0,
+        "ok": true
+      }
+    },
+    "ok": true
+  },
+  "outputs": {
+    "raw_dir": "D:\\intern project\\google-play-reviews\\data\\raw\\tiktok-videos-shop-live\\20260122T210002Z",
+    "processed_file": "D:\\intern project\\google-play-reviews\\data\\processed\\tiktok-videos-shop-live\\20260122T210002Z\\reviews.parquet",
+    "run_dir": "D:\\intern project\\google-play-reviews\\outputs\\runs\\tiktok-videos-shop-live\\20260122T210002Z",
+    "summary_path": "D:\\intern project\\google-play-reviews\\outputs\\runs\\tiktok-videos-shop-live\\20260122T210002Z\\run_summary.json",
+    "raw_csv": "D:\\intern project\\google-play-reviews\\data\\raw\\tiktok-videos-shop-live\\20260122T210002Z\\reviews_raw.csv"
+  },
+  "fetch_params": {
+    "lang": "en",
+    "country": "us",
+    "sort": "newest",
+    "batch_limit": 600
+  }
+}

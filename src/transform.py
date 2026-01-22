@@ -1,28 +1,21 @@
 # src/transform.py
 import pandas as pd
-from typing import Tuple
-
-def basic_cleaning(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Minimal cleaning:
-    - Drop fully empty rows
-    - Ensure basic column types where obvious
-    """
-    df = df.copy()
-    df = df.dropna(how="all")
-    # example: ensure timestamp col parsed if exists
-    if "timestamp" in df.columns:
-        try:
-            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-        except Exception:
-            pass
-    return df
 
 def run_transforms(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Orchestrate transformations (extend this to add feature engineering)
+    Keep this function as the single entrypoint for transformation logic.
+    Extend here later (feature engineering, text cleaning, etc).
     """
-    df = basic_cleaning(df)
-    # add any additional transformations here
+    df = df.copy()
+
+    # Drop fully empty rows
+    df = df.dropna(how="all")
+
+    # Example: standardize a common timestamp field if exists
+    for col in ["at", "timestamp", "created_at", "date"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+            break
+
     return df
 

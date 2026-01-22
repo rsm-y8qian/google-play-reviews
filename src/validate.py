@@ -2,39 +2,35 @@
 from typing import Dict, List
 import pandas as pd
 
-def validate_dataframe(df: pd.DataFrame, required_columns: List[str]=None) -> Dict:
+def validate_dataframe(df: pd.DataFrame, required_columns: List[str]) -> Dict:
     """
-    Basic validation returning a serializable dict summarizing checks.
+    Returns a JSON-serializable validation report.
     """
-    if required_columns is None:
-        required_columns = []
-
-    n = len(df)
-    results = {}
-    ok = True
+    report = {
+        "row_count": int(len(df)),
+        "required_columns": {},
+        "ok": True,
+    }
 
     for col in required_columns:
         exists = col in df.columns
         missing_ratio = None
         col_ok = False
+
         if exists:
             missing_ratio = float(df[col].isna().mean())
+            # you can relax this rule later; for now strict is fine
             col_ok = missing_ratio == 0.0
-        else:
-            missing_ratio = None
-            col_ok = False
 
-        results[col] = {
+        report["required_columns"][col] = {
             "exists": bool(exists),
             "missing_ratio": missing_ratio,
-            "ok": bool(col_ok)
+            "ok": bool(col_ok),
         }
-        if not col_ok:
-            ok = False
 
-    return {
-        "raw_count": n,
-        "validations": results,
-        "ok": bool(ok)
-    }
+        if not col_ok:
+            report["ok"] = False
+
+    return report
+
 
