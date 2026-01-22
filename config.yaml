@@ -1,6 +1,14 @@
-raw_path: "data/raw"
-output_path: "outputs/processed.parquet"
-summary_path: "outputs/run_summary.json"
-required_columns:
-  - "review_id"
-output_format: "parquet"
+# config.yaml
+data:
+  raw_dir: "data/raw"
+  processed_file: "data/processed/reviews.parquet"  # latest snapshot
+
+outputs:
+  runs_dir: "outputs/runs"
+
+validation:
+  required_columns:
+    - review_id
+
+store:
+  parquet_prefer: true

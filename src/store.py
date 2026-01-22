@@ -1,51 +1,18 @@
+# src/store.py
 from pathlib import Path
 import pandas as pd
+import warnings
 
+def write_parquet(df: pd.DataFrame, path: Path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        df.to_parquet(path, index=False)
+    except Exception as e:
+        # re-raise to let caller handle fallback
+        raise
 
-def store_parquet(
-    df: pd.DataFrame,
-    path: str,
-    overwrite: bool = True
-):
-    """
-    Store a DataFrame as a Parquet file.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame to store.
-    path : str
-        Output file path.
-    overwrite : bool, optional
-        Whether to overwrite the file if it already exists.
-    """
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-
-    if p.exists() and not overwrite:
-        raise FileExistsError(path)
-
-    df.to_parquet(p, index=False)
-
-
-def store_csv(
-    df: pd.DataFrame,
-    path: str,
-    overwrite: bool = True
-):
-    """
-    Store a DataFrame as a CSV file.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame to store.
-    path : str
-        Output file path.
-    overwrite : bool, optional
-        Whether to overwrite the file if it already exists.
-    """
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-
-    df.to_csv(p, index=False)
+def write_csv(df: pd.DataFrame, path: Path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)

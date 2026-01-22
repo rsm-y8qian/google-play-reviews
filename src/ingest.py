@@ -1,41 +1,26 @@
+# src/ingest.py
 from pathlib import Path
 import pandas as pd
+from typing import Union
 
-
-def ingest_from_csv(path: str) -> pd.DataFrame:
+def ingest_from_csv(path: Union[str, Path]) -> pd.DataFrame:
     """
-    Load raw CSV data from a file or a directory.
-
-    If a directory is provided, all CSV files under the directory
-    will be read and concatenated into a single DataFrame.
-
-    Parameters
-    ----------
-    path : str
-        Path to a CSV file or a directory containing CSV files.
-
-    Returns
-    -------
-    pd.DataFrame
-        Combined raw dataset.
+    Read raw CSV(s) from a file path or directory and return a single DataFrame.
     """
     p = Path(path)
 
-    # If the path is a directory, read and concatenate all CSV files
+    if not p.exists():
+        raise FileNotFoundError(f"ingest path not found: {p}")
+
     if p.is_dir():
         files = sorted(p.glob("*.csv"))
         if not files:
-            raise FileNotFoundError(f"No CSV files found under {path}")
-
+            raise FileNotFoundError(f"No CSV files found under {p}")
         dfs = [pd.read_csv(f) for f in files]
-        df = pd.concat(dfs, ignore_index=True)
+        return pd.concat(dfs, ignore_index=True)
 
-    # If the path is a single CSV file, read it directly
-    elif p.is_file():
-        df = pd.read_csv(p)
+    # file
+    if p.is_file():
+        return pd.read_csv(p)
 
-    # If the path does not exist, raise an explicit error
-    else:
-        raise FileNotFoundError(path)
-
-    return df
+    raise FileNotFoundError(path)

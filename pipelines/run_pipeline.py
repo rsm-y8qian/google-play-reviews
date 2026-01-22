@@ -1,117 +1,132 @@
+# pipelines/run_pipeline.py
+import json
 import sys
 from pathlib import Path
-import json
-from datetime import datetime
-import argparse
+from datetime import datetime, timezone
+import yaml
+import traceback
 
 import pandas as pd
-import yaml
+import numpy as np
 
+# local modules
 from src.ingest import ingest_from_csv
 from src.transform import run_transforms
-from src.validate import run_validations
-from src.store import store_parquet
+from src.validate import validate_dataframe
+from src.store import write_parquet, write_csv
 
+# ---------------- helpers ----------------
+def json_safe(obj):
+    """Convert common non-JSON-serializable objects (numpy, pandas types) to plain python types."""
+    if isinstance(obj, (np.bool_, )):
+        return bool(obj)
+    if isinstance(obj, (np.integer, )):
+        return int(obj)
+    if isinstance(obj, (np.floating, )):
+        return float(obj)
+    if isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(v) for v in obj]
+    return obj
 
-def load_config(path: str = "config.yaml"):
-    """
-    Load pipeline configuration from a YAML file.
+def load_config(path: Path):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
-    If the file does not exist, a default configuration
-    will be returned.
+# ---------------- main ----------------
+def main(cfg_path: str = "config.yaml"):
+    base = Path(__file__).resolve().parents[1]
+    cfg = load_config(base / cfg_path)
 
-    Parameters
-    ----------
-    path : str
-        Path to the configuration file.
+    # data layer paths
+    raw_dir = base / Path(cfg["data"]["raw_dir"])
+    processed_file = base / Path(cfg["data"]["processed_file"])
 
-    Returns
-    -------
-    dict
-        Configuration dictionary.
-    """
-    p = Path(path)
+    # run outputs
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    runs_dir = base / Path(cfg["outputs"]["runs_dir"])
+    run_dir = runs_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
 
-    if p.exists():
-        return yaml.safe_load(p.read_text())
-    else:
-        # Default configuration (can be customized)
-        return {
-            "raw_path": "data/raw",
-            "output_path": "outputs/processed.parquet",
-            "summary_path": "outputs/run_summary.json",
-            "required_columns": [],
-            "output_format": "parquet",
-        }
+    summary_path = run_dir / "run_summary.json"
+    processed_written_path = None
 
-
-def main(cfg: dict):
-    """
-    Run the end-to-end data pipeline:
-    ingest -> transform -> validate -> store.
-    """
-    start_time = datetime.utcnow().isoformat() + "Z"
+    # summary skeleton
     summary = {
-        "start_time": start_time,
+        "run_id": run_id,
+        "start_time": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "errors": [],
+        "raw_count": None,
+        "processed_count": None,
+        "validations": {},
+        "outputs": {}
     }
 
     try:
-        # 1) Ingest raw data
-        raw_df = ingest_from_csv(cfg["raw_path"])
-        summary["raw_count"] = len(raw_df)
-        print(f"[INGEST] rows: {len(raw_df)}")
+        # INGEST
+        df_raw = ingest_from_csv(raw_dir)
+        summary["raw_count"] = int(len(df_raw))
+        print(f"[INGEST] rows: {len(df_raw)}")
 
-        # 2) Apply transformations
-        processed_df = run_transforms(raw_df)
-        summary["processed_count"] = len(processed_df)
-        print(f"[TRANSFORM] rows: {len(processed_df)}")
+        # TRANSFORM
+        df_proc = run_transforms(df_raw)
+        summary["processed_count"] = int(len(df_proc))
+        print(f"[TRANSFORM] rows: {len(df_proc)}")
 
-        # 3) Run validation checks
-        validation_results = run_validations(
-            raw_df,
-            processed_df,
-            cfg.get("required_columns")
-        )
-        summary["validations"] = validation_results
+        # VALIDATE
+        required_cols = cfg.get("validation", {}).get("required_columns", [])
+        val = validate_dataframe(df_proc, required_columns=required_cols)
+        summary["validations"] = val
         print("[VALIDATE] completed")
 
-        # 4) Store processed output
-        store_parquet(processed_df, cfg["output_path"])
-        print(f"[STORE] output written to {cfg['output_path']}")
+        # STORE: first, try to write the canonical snapshot to data/processed
+        # Prefer parquet when configured and engine available
+        prefer_parquet = cfg.get("store", {}).get("parquet_prefer", True)
+        try:
+            if prefer_parquet:
+                write_parquet(df_proc, processed_file)
+                processed_written_path = processed_file
+            else:
+                # fallback to csv with .csv extension
+                csv_path = processed_file.with_suffix(".csv")
+                write_csv(df_proc, csv_path)
+                processed_written_path = csv_path
+            print(f"[STORE] processed data written to {processed_written_path}")
+        except Exception as e:
+            # attempt fallback to csv in outputs run dir
+            fallback = run_dir / "processed.csv"
+            try:
+                write_csv(df_proc, fallback)
+                processed_written_path = fallback
+                print(f"[STORE] parquet write failed, fallback CSV written to {fallback}")
+            except Exception as ee:
+                raise RuntimeError(f"Write failed both parquet and csv: {e}; {ee}")
+
+        # record outputs in summary
+        summary["outputs"]["processed_data"] = str(processed_written_path)
+        summary["outputs"]["run_summary"] = str(summary_path)
 
     except Exception as e:
-        import traceback
+        tb = traceback.format_exc()
         summary["errors"].append(str(e))
-        summary["traceback"] = traceback.format_exc()
-        print("[ERROR]", e, file=sys.stderr)
+        summary["errors"].append(tb)
+        print("[ERROR] Pipeline failed:")
+        print(tb)
 
     finally:
-        # Always write run summary for observability
-        end_time = datetime.utcnow().isoformat() + "Z"
-        summary["end_time"] = end_time
-
-        summary_path = Path(cfg["summary_path"])
+        # always set end_time and write summary (observability)
+        summary["end_time"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         summary_path.parent.mkdir(parents=True, exist_ok=True)
-
         with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
-
-        print(f"[SUMMARY] written to {cfg['summary_path']}")
-        print(json.dumps(summary, indent=2))
-
+            json.dump(json_safe(summary), f, indent=2, ensure_ascii=False)
+        print(f"[SUMMARY] written to {summary_path}")
+        # also print summary safely
+        print(json.dumps(json_safe(summary), indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run the end-to-end data pipeline"
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config.yaml",
-        help="Path to pipeline configuration file",
-    )
-    args = parser.parse_args()
-
-    cfg = load_config(args.config)
-    main(cfg)
+    # allow override of config file path via CLI
+    cfg_arg = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    main(cfg_arg)
